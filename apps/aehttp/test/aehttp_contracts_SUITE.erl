@@ -37,6 +37,7 @@
          spend_test_contract/1,
          stack_contract/1,
          type_error_contract/1,
+         remote_gas_test_contract/1,
          null/1
         ]).
 
@@ -66,7 +67,12 @@ groups() ->
        fundme_contract,
        erc20_token_contract,
        type_error_contract,
+       remote_gas_test_contract,
        null                                     %This allows to end with ,
+      ]},
+     {remote, [],
+      [
+       remote_gas_test_contract
       ]}
     ].
 
@@ -95,7 +101,9 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok.
 
-init_per_group(contracts, Config) ->
+
+
+init_for_contracts(Config) ->
     NodeName = aecore_suite_utils:node_name(?NODE),
     aecore_suite_utils:start_node(?NODE, Config),
     aecore_suite_utils:connect(NodeName),
@@ -129,6 +137,9 @@ init_per_group(contracts, Config) ->
                             priv_key => DPrivkey,
                             start_amt => StartAmt}},
     [{accounts,Accounts},{node_name,NodeName}|Config].
+
+init_per_group(contracts, Config) -> init_for_contracts(Config);
+init_per_group(remote, Config) -> init_for_contracts(Config).
 
 end_per_group(_Group, Config) ->
     RpcFun = fun(M, F, A) -> rpc(?NODE, M, F, A) end,
@@ -1062,6 +1073,53 @@ type_error_contract(_Cfg) ->
           "to arguments\n"
           "  x : string\n"
           "  1 : int\n">>,
+    ok.
+
+
+remote_gas_test_contract(Config) ->
+    %% Set an account.
+    Node = proplists:get_value(node_name, Config),
+    %% Get account information.
+    #{acc_a := #{pub_key := APub,
+                 priv_key := APriv}} = proplists:get_value(accounts, Config),
+
+    %% Make sure accounts have enough tokens.
+    _ABal0 = ensure_balance(APub, 20000000),
+    init_fun_calls(),
+
+    %% Set up two contracts.
+    %% Compile test contract "remote_gas_test.aes".
+    Code = compile_test_contract("remote_gas_test"),
+
+    {EncC1Pub,_,_} =
+        create_compute_contract(Node, APub, APriv, Code, args_to_binary([0])),
+
+
+    {EncC2Pub,DecC2Pub,_} =
+        create_compute_contract(Node, APub, APriv, Code, args_to_binary([100])),
+
+
+    force_fun_calls(Node),
+    call_get(APub, APriv, EncC1Pub,  0),
+    call_get(APub, APriv, EncC2Pub,  100),
+    force_fun_calls(Node),
+    15618888 = get_balance(APub),
+
+    %% Test remote call with limited gas
+    %% Call contract remote set function with limited gas
+    %% call_func(APub, APriv, EncC1Pub, <<"call">>,
+    %%           args_to_binary([DecC2Pub, 1, 50000])),
+    %% %% call_get(APub, APriv, EncC2Pub,  1),
+    %% force_fun_calls(Node),
+
+
+
+    %% Test remote call with limited gas that fails (out of gas).
+
+    %% Test remote call with limited gas that fails (invald call).
+
+    %% Test remote call with limited gas that fails with changed state.
+
     ok.
 
 %% Data structure functions.
