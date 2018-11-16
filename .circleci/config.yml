@@ -404,7 +404,6 @@ jobs:
     steps:
       - checkout
       - *set_package_path
-      - *setup_secrets
       - attach_workspace:
           at: *packages_workspace
       - run:
@@ -522,7 +521,6 @@ jobs:
   uat_chain_snapshot:
     <<: *infrastructure_config
     steps:
-      - *setup_secrets
       - run:
           name: Snapshot of UAT blockchain
           environment:
@@ -636,7 +634,6 @@ jobs:
       - checkout
       - attach_workspace:
           at: *packages_workspace
-      - *setup_secrets
       - *upload_github_release_asset
 
   upload_packages_linux:
@@ -646,7 +643,6 @@ jobs:
       - *set_package_path
       - attach_workspace:
           at: *packages_workspace
-      - *setup_secrets
       - *upload_github_release_asset
       - *upload_release_artifacts
 
