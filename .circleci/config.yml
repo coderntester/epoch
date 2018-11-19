@@ -156,7 +156,6 @@ references:
     - *set_package_path
     - attach_workspace:
         at: *packages_workspace
-    - *setup_secrets
     - run:
         name: Deploy
         environment:
