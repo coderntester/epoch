@@ -203,16 +203,20 @@ handle_cast(_, State) ->
 handle_info({gproc_ps_event, Event, #{info := Info}},
             State = #state{ gossip_txs = GossipTxs }) ->
     %% FUTURE: Forward blocks only to outbound connections.
-    PeerIds = [ aec_peers:peer_id(P) || P <- aec_peers:connected_peers() ],
+    %% Take a random subset (possibly empty) of peers that agree with us 
+    %% on chain height to forward blocks and transactions to.
+    PeerIds = [ aec_peers:peer_id(P) || P <- aec_peers:get_random(10) ],
     NonSyncingPeerIds = [ P || P <- PeerIds, not peer_in_sync(State, P) ],
     case Event of
         block_to_publish ->
             Block = Info,
             enqueue(block, Block, NonSyncingPeerIds);
         tx_created when GossipTxs ->
+            %% If we allow http requests creating transactions when we are catching up
+            %% with other chains, we just keep them in mempool
             enqueue(tx, Info, PeerIds);
         tx_received when GossipTxs ->
-            enqueue(tx, Info, PeerIds);
+            enqueue(tx, Info, NonSyncingPeerIds);
         _             -> ignore
     end,
     {noreply, State};
