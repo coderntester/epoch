@@ -3209,12 +3209,12 @@ naming_system_manage_name(_Config) ->
     {ok,_BS2} = aecore_suite_utils:mine_blocks_until_tx_on_chain(Node, ClaimTxHash, 10),
     {ok, []} = rpc(aec_tx_pool, peek, [infinity]),
 
-    %% Check tx fee taken from account, claim fee burned,
+    %% Check tx fee taken from account, claim fee locked,
     %% then mine reward and fee added to account
-    ClaimBurnedFee = rpc(aec_governance, name_claim_burned_fee, []),
+    ClaimLockedFee = rpc(aec_governance, name_claim_locked_fee, []),
     {ok, 200, #{<<"balance">> := Balance3}} = get_balance_at_top(),
     {ok, 200, #{<<"height">> := Height3}} = get_key_blocks_current_sut(),
-    ?assertEqual(Balance3, Balance2 - Fee + (Height3 - Height2) * MineReward - ClaimBurnedFee),
+    ?assertEqual(Balance3, Balance2 - Fee + (Height3 - Height2) * MineReward - ClaimLockedFee),
 
     %% Check that name entry is present
     EncodedNHash = aehttp_api_encoder:encode(name, NHash),
