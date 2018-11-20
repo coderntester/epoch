@@ -514,6 +514,8 @@ run_job(Queue, Fun) ->
     proc_lib:spawn(jobs, run, [Queue, Fun]).
 
 %% Gossip Tx or Block - spawn a process and call jobs from there.
+enqueue(Kind, Data, []) ->
+    ok;
 enqueue(Kind, Data, PeerIds) ->
     spawn(fun() ->
     case Kind of
