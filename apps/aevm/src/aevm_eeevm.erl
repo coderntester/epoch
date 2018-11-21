@@ -1035,6 +1035,12 @@ loop(CP, StateIn) ->
                     %%             otherwise.
                     %% µ'i ≡ M(µi, µs[1], µs[2])
                     %% Thus the operand order is: value, input offset, input size.
+                    case aevm_eeevm_state:vm_version(State0) of
+                        ?AEVM_01_Sophia_01 ->
+                            eval_error({illegal_instruction, OP}, State0);
+                        _ ->
+                            ok
+                    end,
                     {Value, State1} = pop(State0),
                     {From, State2} = pop(State1),
                     {Size, State3} = pop(State2),
@@ -1104,6 +1110,12 @@ loop(CP, StateIn) ->
                     %% present address Ia. This means that the recipient is
                     %% in fact the same account as at present, simply that
                     %% the code is overwritten.
+                    case aevm_eeevm_state:vm_version(State0) of
+                        ?AEVM_01_Sophia_01 ->
+                            eval_error({illegal_instruction, OP}, State0);
+                        _ ->
+                            ok
+                    end,
                     {Res, State1} = recursive_call(State0, OP),
                     State2 = push(Res, State1),
                     next_instruction(CP, State, State2);
@@ -1139,6 +1151,12 @@ loop(CP, StateIn) ->
                     %% This means that the recipient is in fact the same account as at
                     %% present, simply that the code is overwritten and the context is
                     %% almost entirely identical.
+                    case aevm_eeevm_state:vm_version(State0) of
+                        ?AEVM_01_Sophia_01 ->
+                            eval_error({illegal_instruction, OP}, State0);
+                        _ ->
+                            ok
+                    end,
                     {Res, State1} = recursive_call(State0, OP),
                     State2 = push(Res, State1),
                     next_instruction(CP, State, State2);
