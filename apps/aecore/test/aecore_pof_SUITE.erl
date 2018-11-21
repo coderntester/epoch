@@ -98,7 +98,8 @@ siblings_on_key_block(Config) ->
 
     Top = lists:last(N1Blocks2),
     ?assertEqual(key, aec_blocks:type(Top)),
-    siblings_common(Top, N1, N2, Account1, Account2).
+    siblings_common(Top, N1, N2, Account1, Account2, _Fraud = false).
+
 
 siblings_on_micro_block(Config) ->
     ct:pal("Setting up nodes"),
@@ -129,7 +130,7 @@ siblings_on_micro_block(Config) ->
 
     ?assertEqual(micro, aec_blocks:type(Top)),
 
-    siblings_common(Top, N1, N2, Account1, Account2).
+    siblings_common(Top, N1, N2, Account1, Account2, _Fraud = true).
 
 ensure_top_is_a_micro(_Node,_Account, Nonce) when Nonce > 5 ->
     %% We give it five attempts then fail.
@@ -144,25 +145,28 @@ ensure_top_is_a_micro(Node, Account, Nonce) ->
         key -> ensure_top_is_a_micro(Node, Account, Nonce + 1)
     end.
 
-siblings_common(TopBlock, N1, N2, Account1, Account2) ->
+siblings_common(TopBlock, N1, N2, Account1, Account2, Fraud) ->
     ct:pal("Waiting for sync"),
     %% Wait until the chain is synced.
     {ok, ExpectedTop1} = aec_blocks:hash_internal_representation(TopBlock),
+    0 = get_lock_holder_balance(N1),
+    0 = get_lock_holder_balance(N2),
     aec_test_utils:wait_for_it_or_timeout(
       fun() -> rpc:call(N2, aec_chain, top_block_hash, []) end,
       ExpectedTop1,
       10000),
 
     N1KeyBlocksCount = aec_blocks:height(TopBlock),
+    SpendFee = 17000,
 
     ct:pal("Starting to test fraud"),
     %% Add a transaction and create the first micro block
-    {ok, _Tx1} = add_spend_tx(N1, 1000, 17000,  1,  10, Account1, new_pubkey()),
+    {ok, _Tx1} = add_spend_tx(N1, 1000, SpendFee,  1,  10, Account1, new_pubkey()),
     {ok, Micro1, _} =  rpc:call(N1, aec_block_micro_candidate, create, [TopBlock]),
     {ok, Micro1S} = rpc:call(N1, aec_keys, sign_micro_block, [Micro1]),
 
     %% Add another transaction and create the second micro block
-    {ok, _Tx2} = add_spend_tx(N1, 1000, 17000,  2,  10, Account1, new_pubkey()),
+    {ok, _Tx2} = add_spend_tx(N1, 1000, SpendFee,  2,  10, Account1, new_pubkey()),
     {ok, Micro2, _} =  rpc:call(N1, aec_block_micro_candidate, create, [TopBlock]),
     {ok, Micro2S} = rpc:call(N1, aec_keys, sign_micro_block, [Micro2]),
 
@@ -174,7 +178,7 @@ siblings_common(TopBlock, N1, N2, Account1, Account2) ->
     {ok, [Key2]} = aecore_suite_utils:mine_key_blocks(N2, 1),
 
     %% Now we need a micro block to report the fraud in.
-    {ok, _} = add_spend_tx(N2, 1000, 17000,  1,  10, Account2, new_pubkey()),
+    {ok, _} = add_spend_tx(N2, 1000, SpendFee,  1,  10, Account2, new_pubkey()),
     {ok, MicroFraud, _} = rpc:call(N2, aec_block_micro_candidate, create, [Key2]),
     {ok, MicroFraudS} = rpc:call(N2, aec_keys, sign_micro_block, [MicroFraud]),
 
@@ -191,7 +195,7 @@ siblings_common(TopBlock, N1, N2, Account1, Account2) ->
     end,
 
     %% Manually add the report and check that the fraud would not be reported again.
-    {ok, _} = add_spend_tx(N2, 1000, 17000,  2,  10, Account2, new_pubkey()),
+    {ok, _} = add_spend_tx(N2, 1000, SpendFee,  2,  10, Account2, new_pubkey()),
     ok = rpc:call(N2, aec_conductor, post_block, [MicroFraudS]),
     {ok, MicroNoFraud, _} = rpc:call(N2, aec_block_micro_candidate, create, [MicroFraudS]),
     ?assertEqual(no_fraud, aec_blocks:pof(MicroNoFraud)),
@@ -210,14 +214,15 @@ siblings_common(TopBlock, N1, N2, Account1, Account2) ->
     {value, Acc1} = rpc:call(N2, aec_chain, get_account, [B1]),
     {value, Acc2} = rpc:call(N2, aec_chain, get_account, [B2]),
     ct:log("Balances: ~p and ~p", [Acc1, Acc2]),
-    Bal1 = aec_accounts:balance(Acc1),
-    Bal2 = aec_accounts:balance(Acc2),
 
     %% Node1 has mined N1KeyBlocksCount blocks, but should only get N1KeyBlocksCount - 1 rewards (fraud)
     %% Node2 has mined N2KeyBlocksCount blocks, but should only get N2KeyBlocksCount - 2 rewards (delay)
     %%                                                                               + 1 fraud reward.
     MR = aec_governance:block_mine_reward(),
     FR = aec_governance:fraud_report_reward(),
+
+    Bal1 = aec_accounts:balance(Acc1),
+    Bal2 = aec_accounts:balance(Acc2),
     case Bal1 >= (N1KeyBlocksCount - 1) * MR andalso Bal1 < (N1KeyBlocksCount - 1) * MR + 100000 of %% should get some fees
         true -> ok;
         false -> error({bad_balance1, Bal1})
@@ -231,7 +236,13 @@ siblings_common(TopBlock, N1, N2, Account1, Account2) ->
     Top2 = rpc:call(N2, aec_chain, top_block, []),
     aecore_suite_utils:wait_for_height(N1, aec_blocks:height(Top2)),
     Top1 = rpc:call(N1, aec_chain, top_block, []),
-    ?assertEqual(Top1, Top2).
+    ?assertEqual(Top1, Top2),
+
+    Locked = get_lock_holder_balance(N1),
+    {Locked, Locked} = {Locked, get_lock_holder_balance(N2)},
+    true = Locked >= MR - FR, % some fees
+    true = Locked =< MR.
+
 
 %% ============================================================
 %% Helpers
@@ -259,3 +270,10 @@ new_pubkey() ->
     #{ public := PubKey } = enacl:sign_keypair(),
     PubKey.
 
+get_lock_holder_balance(N) ->
+    HolderPubKey = aec_governance:locked_coins_holder_account(),
+    case rpc:call(N, aec_chain, get_account, [HolderPubKey]) of
+        {value, Acc} ->
+            _Bal = aec_accounts:balance(Acc);
+        none -> 0
+    end.
